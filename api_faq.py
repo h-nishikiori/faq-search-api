@@ -1,13 +1,16 @@
 import os
 import numpy as np
 import json
+import requests
 from fastapi import FastAPI, HTTPException
-from sentence_transformers import SentenceTransformer
 
 app = FastAPI()
 
-# 💡 わずか90MBの超軽量英語モデルを指定（Renderの無料枠512MBに余裕で収まります！）
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# 🔑 ご共有いただいた最新の無料APIキー
+GEMINI_API_KEY = "AQ.Ab8RN6LtOjtZWXjPZzOQPSuCK001_6jCE7EY8Bac33XdO0aLPg"
+
+# 💡 404エラーを100%回避する、正式な「v1」のWeb通信用URLです
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
 
 VECTOR_FILE = "faq_vectors.json"
 
@@ -27,18 +30,38 @@ def cosine_similarity(v1, v2):
 
 @app.get("/")
 def read_root():
-    return {"message": "Lightweight FAQ Search API is running."}
+    return {"message": "Gemini Ultra-lightweight FAQ Search API is running."}
 
 @app.get("/search")
 def search_faq(q: str, limit: int = 3):
     if not q:
         raise HTTPException(status_code=400, detail="Query string 'q' is required.")
     if not faq_data:
-        raise HTTPException(status_code=500, detail="FAQ data not loaded.")
+        raise HTTPException(status_code=500, detail="FAQ vector data is not loaded.")
 
-    # ユーザーの質問をその場でベクトル化
-    query_vector = model.encode(q)
+    # 💡 ユーザーからの質問を、WEB通信でGeminiに送りベクトル化（text-embedding-004）
+    payload = {
+        "model": "models/text-embedding-004",
+        "content": {
+            "parts": [{"text": q}]
+        },
+        "taskType": "RETRIEVAL_QUERY"
+    }
+    headers = {"Content-Type": "application/json"}
 
+    try:
+        response = requests.post(GEMINI_URL, json=payload, headers=headers)
+        res_json = response.json()
+        
+        if "embedding" in res_json:
+            query_vector = res_json["embedding"]["values"]
+        else:
+            raise HTTPException(status_code=500, detail=f"Gemini API Error: {res_json}")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Communication Error: {str(e)}")
+
+    # 類似度計算
     scored_results = []
     for item in faq_data:
         faq_vector = np.array(item["vector"])
