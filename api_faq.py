@@ -1,94 +1,38 @@
-import os
-import numpy as np
+# 必要な超軽量ライブラリをマックに入れます
+python3 -m pip install sentence-transformers --break-system-packages
+
+# 変換スクリプトを作成して実行します
+cat << 'EOF' > convert_gemini_final.py
 import json
-import requests
-from fastapi import FastAPI, HTTPException
+from sentence_transformers import SentenceTransformer
 
-app = FastAPI()
+INPUT_FILE = "faq_vectors.json"
+OUTPUT_FILE = "faq_vectors_new.json"
 
-# 🔑 ご共有いただいた最新の無料APIキー
-GEMINI_API_KEY = "AQ.Ab8RN6LtOjtZWXjPZzOQPSuCK001_6jCE7EY8Bac33XdO0aLPg"
+print("🚀 【完全自己完結】超軽量・高精度の英語AIモデルでデータ変換を開始します...")
 
-# 404エラーを回避する正式なv1エンドポイント
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
+with open(INPUT_FILE, "r", encoding="utf-8") as f:
+    faq_data = json.load(f)
 
-VECTOR_FILE = "faq_vectors.json"
+# わずか90MBの世界標準モデルをロード（一瞬で終わります）
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
-if os.path.exists(VECTOR_FILE):
-    with open(VECTOR_FILE, "r", encoding="utf-8") as f:
-        faq_data = json.load(f)
-else:
-    faq_data = []
+new_faq_data = []
 
-# コサイン類似度計算（安全・自動次元調整版）
-def cosine_similarity(v1, v2):
-    v1 = np.array(v1, dtype=np.float32)
-    v2 = np.array(v2, dtype=np.float32)
+for i, item in enumerate(faq_data):
+    question_text = item["question"]
+    print(f"[{i+1}/{len(faq_data)}] ベクトル化中: {question_text[:35]}...")
     
-    # 💡 データの次元数（長さ）が異なる場合のパニックを絶対に防ぐガード
-    if v1.shape[0] != v2.shape[0]:
-        min_dim = min(v1.shape[0], v2.shape[0])
-        v1 = v1[:min_dim]
-        v2 = v2[:min_dim]
-        
-    dot_product = np.dot(v1, v2)
-    norm_v1 = np.linalg.norm(v1)
-    norm_v2 = np.linalg.norm(v2)
+    # マックの中で一瞬で計算（WEB通信しないので絶対にエラーになりません）
+    vector = model.encode(question_text)
     
-    if norm_v1 == 0 or norm_v2 == 0:
-        return 0.0
-    return float(dot_product / (norm_v1 * norm_v2))
+    item["vector"] = vector.tolist()
+    new_faq_data.append(item)
 
-@app.get("/")
-def read_root():
-    return {"message": "Gemini Ultra-lightweight FAQ Search API is running."}
+with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+    json.dump(new_faq_data, f, ensure_ascii=False, indent=4)
 
-@app.get("/search")
-def search_faq(q: str, limit: int = 3):
-    if not q:
-        raise HTTPException(status_code=400, detail="Query string 'q' is required.")
-    if not faq_data:
-        raise HTTPException(status_code=500, detail="FAQ vector data is not loaded.")
+print(f"✨ 大成功！エラーなしで全件の変換が完了しました！: {OUTPUT_FILE}")
+EOF
 
-    # ユーザーからの質問をGeminiに送りベクトル化
-    payload = {
-        "model": "models/text-embedding-004",
-        "content": {
-            "parts": [{"text": q}]
-        },
-        "taskType": "RETRIEVAL_QUERY"
-    }
-    headers = {"Content-Type": "application/json"}
-
-    try:
-        response = requests.post(GEMINI_URL, json=payload, headers=headers)
-        res_json = response.json()
-        
-        if "embedding" in res_json:
-            query_vector = res_json["embedding"]["values"]
-        else:
-            raise HTTPException(status_code=500, detail=f"Gemini API Error: {res_json}")
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Communication Error: {str(e)}")
-
-    # 類似度計算
-    scored_results = []
-    for item in faq_data:
-        if "vector" in item and item["vector"] is not None:
-            faq_vector = item["vector"]
-            # 💡 次元数がズレていても、上記の自動調整関数が安全に計算してくれます
-            score = cosine_similarity(query_vector, faq_vector)
-        else:
-            score = 0.0
-            
-        scored_results.append({
-            "id": item.get("id"),
-            "question": item.get("question"),
-            "answer": item.get("answer"),
-            "score": score
-        })
-
-    # スコア順にソート（降順）
-    scored_results.sort(key=lambda x: x["score"], reverse=True)
-    return {"query": q, "results": scored_results[:limit]}
+python3 convert_gemini_final.py
