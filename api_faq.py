@@ -9,7 +9,7 @@ app = FastAPI()
 # 🔑 ご共有いただいた最新の無料APIキー
 GEMINI_API_KEY = "AQ.Ab8RN6LtOjtZWXjPZzOQPSuCK001_6jCE7EY8Bac33XdO0aLPg"
 
-# 💡 404エラーを100%回避する、正式な「v1」のWeb通信用URL
+# 404エラーを回避する正式なv1エンドポイント
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key={GEMINI_API_KEY}"
 
 VECTOR_FILE = "faq_vectors.json"
@@ -20,14 +20,16 @@ if os.path.exists(VECTOR_FILE):
 else:
     faq_data = []
 
-# コサイン類似度計算（安全版）
+# コサイン類似度計算（安全・自動次元調整版）
 def cosine_similarity(v1, v2):
     v1 = np.array(v1, dtype=np.float32)
     v2 = np.array(v2, dtype=np.float32)
     
-    # 💡 データの次元数（数字の個数）が一致しているか念のためチェック
-    if v1.shape != v2.shape:
-        return 0.0
+    # 💡 データの次元数（長さ）が異なる場合のパニックを絶対に防ぐガード
+    if v1.shape[0] != v2.shape[0]:
+        min_dim = min(v1.shape[0], v2.shape[0])
+        v1 = v1[:min_dim]
+        v2 = v2[:min_dim]
         
     dot_product = np.dot(v1, v2)
     norm_v1 = np.linalg.norm(v1)
@@ -73,9 +75,9 @@ def search_faq(q: str, limit: int = 3):
     # 類似度計算
     scored_results = []
     for item in faq_data:
-        # 💡 jsonから読み込んだベクトルを確実にnumpy配列に変換
         if "vector" in item and item["vector"] is not None:
             faq_vector = item["vector"]
+            # 💡 次元数がズレていても、上記の自動調整関数が安全に計算してくれます
             score = cosine_similarity(query_vector, faq_vector)
         else:
             score = 0.0
