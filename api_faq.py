@@ -6,7 +6,7 @@ from sentence_transformers import SentenceTransformer
 
 app = FastAPI()
 
-# 💡 超軽量モデルをロード（Renderの無料枠512MBに余裕で収まります！）
+# 💡 わずか90MBの超軽量英語モデルを指定（Renderの無料枠512MBに余裕で収まります！）
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 VECTOR_FILE = "faq_vectors.json"
